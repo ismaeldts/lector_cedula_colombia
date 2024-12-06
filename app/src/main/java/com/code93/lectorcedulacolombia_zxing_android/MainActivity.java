@@ -1,8 +1,5 @@
 package com.code93.lectorcedulacolombia_zxing_android;
 
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -10,42 +7,56 @@ import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.zxing.client.android.Intents;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import okhttp3.OkHttpClient;
+import okhttp3.logging.HttpLoggingInterceptor;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
-/**
- * **************************************************************
- * Autor:		Fabian Guillermo Ardila Castro
- * email:		code93dev@gmail.com
- * linkdin:     https://www.linkedin.com/in/fgardila
- * ****************************************************************
- */
 public class MainActivity extends AppCompatActivity {
 
     public static final int CUSTOMIZED_REQUEST_CODE = 0x0000ffff;
-
-    TextView tvFirstName;
-    TextView tvLastName;
-    TextView tvDocumentID;
-    TextView tvGender;
-    TextView tvDate;
-    TextView tvRH;
+    TextView tvCedula, tvName, tvLastName, tvEmail;
+    Retrofit retrofit;
+    ApiService apiService;
+    private static final String BASE_URL = "http://192.168.1.6:8080";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        tvFirstName = findViewById(R.id.tvFirstName);
+        tvCedula = findViewById(R.id.tvDocumentID);
         tvLastName = findViewById(R.id.tvLastName);
-        tvDocumentID = findViewById(R.id.tvDocumentID);
-        tvGender = findViewById(R.id.tvGender);
-        tvDate = findViewById(R.id.tvDate);
-        tvRH = findViewById(R.id.tvRH);
+        tvCedula = findViewById(R.id.tvDocumentID);
+        tvName = findViewById(R.id.tvFirstName); // Asegúrate de tener el id correcto
+        tvLastName = findViewById(R.id.tvLastName); // Asegúrate de tener el id correcto
+
+        HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
+        logging.setLevel(HttpLoggingInterceptor.Level.BODY);
+
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(logging)
+                .build();
+
+        retrofit = new Retrofit.Builder()
+                .baseUrl(BASE_URL)
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+        apiService = retrofit.create(ApiService.class);
+
+
     }
 
     public void onClick(View view) {
@@ -61,149 +72,121 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (requestCode != CUSTOMIZED_REQUEST_CODE && requestCode != IntentIntegrator.REQUEST_CODE) {
-            // This is important, otherwise the result will not be passed to the fragment
             super.onActivityResult(requestCode, resultCode, data);
             return;
         }
 
         IntentResult result = IntentIntegrator.parseActivityResult(resultCode, data);
 
-        if(result.getContents() == null) {
-            Intent originalIntent = result.getOriginalIntent();
-            if (originalIntent == null) {
-                Log.d("LoginActivity", "Cancelled scan");
-                Toast.makeText(this, "Cancelled", Toast.LENGTH_LONG).show();
-            } else if(originalIntent.hasExtra(Intents.Scan.MISSING_CAMERA_PERMISSION)) {
-                Log.d("MainActivity", "Cancelled scan due to missing camera permission");
-                Toast.makeText(this, "Cancelled due to missing camera permission", Toast.LENGTH_LONG).show();
-            }
+        if (result.getContents() == null) {
+            Log.d("MainActivity", "Cancelled scan");
+            Toast.makeText(this, "Cancelled", Toast.LENGTH_LONG).show();
         } else {
             Log.d("MainActivity", "Scanned: " + result.getContents());
-            //Toast.makeText(this, "Scanned: " + result.getContents(), Toast.LENGTH_LONG).show();
-            parseDataCode(result.getContents());
+            // Llamada a la función que solo extrae la cédula
+            String cedula = parseCedulaFromBarcode(result.getContents());
+            String cedulaProcesada = procesarCedulaSegunLongitud(cedula);
+            consultarBackend(cedulaProcesada);
+            Toast.makeText(this, "Cedula escaneada con exito.", Toast.LENGTH_LONG).show();
+            if (cedula != null) {
+                Log.d("MainActivity", "Cédula extraída: " + cedula);
+            }
         }
     }
 
-    private void parseDataCode(String barcode) {
-        InfoTarjeta infoTarjeta = null;
-        if (barcode != null) {
-
-            if (barcode.length() < 150) {
-                //TODO lanzar excepcion y mensaje
-            }
-
-            infoTarjeta = new InfoTarjeta();
-            String primerApellido = "", segundoApellido = "", primerNombre = "", segundoNombre = "", cedula = "", rh = "", fechaNacimiento = "", sexo = "";
-
-            String alphaAndDigits = barcode.replaceAll("[^\\p{Alpha}\\p{Digit}\\+\\_]+", " ");
-            String[] splitStr = alphaAndDigits.split("\\s+");
-
-            if (!alphaAndDigits.contains("PubDSK")) {
-                int corrimiento = 0;
-
-
-                Pattern pat = Pattern.compile("[A-Z]");
-                Matcher match = pat.matcher(splitStr[2 + corrimiento]);
-                int lastCapitalIndex = -1;
-                if (match.find()) {
-                    lastCapitalIndex = match.start();
-                    String TAG = "parseDataCode";
-                    Log.d(TAG, "match.start: " + match.start());
-                    Log.d(TAG, "match.end: " + match.end());
-                    Log.d(TAG, "splitStr: " + splitStr[2 + corrimiento]);
-                    Log.d(TAG, "splitStr length: " + splitStr[2 + corrimiento].length());
-                    Log.d(TAG, "lastCapitalIndex: " + lastCapitalIndex);
-                }
-                cedula = splitStr[2 + corrimiento].substring(lastCapitalIndex - 10, lastCapitalIndex);
-                primerApellido = splitStr[2 + corrimiento].substring(lastCapitalIndex);
-                segundoApellido = splitStr[3 + corrimiento];
-                primerNombre = splitStr[4 + corrimiento];
-                /**
-                 * Se verifica que contenga segundo nombre
-                 */
-                if (Character.isDigit(splitStr[5 + corrimiento].charAt(0))) {
-                    corrimiento--;
-                } else {
-                    segundoNombre = splitStr[5 + corrimiento];
-                }
-
-                //sexo = splitStr[6 + corrimiento].contains("M") ? "Masculino" : "Femenino";
-                sexo = splitStr[6 + corrimiento];
-                rh = splitStr[6 + corrimiento].substring(splitStr[6 + corrimiento].length() - 2);
-                fechaNacimiento = splitStr[6 + corrimiento].substring(2, 10);
-
-            } else {
-                int corrimiento = 0;
-                Pattern pat = Pattern.compile("[A-Z]");
-                if (splitStr[2 + corrimiento].length() > 7) {
-                    corrimiento--;
-                }
-
-
-                Matcher match = pat.matcher(splitStr[3 + corrimiento]);
-                int lastCapitalIndex = -1;
-                if (match.find()) {
-                    lastCapitalIndex = match.start();
-
-                }
-
-                cedula = splitStr[3 + corrimiento].substring(lastCapitalIndex - 10, lastCapitalIndex);
-                primerApellido = splitStr[3 + corrimiento].substring(lastCapitalIndex);
-                segundoApellido = splitStr[4 + corrimiento];
-                if (splitStr[5 + corrimiento].startsWith("0")){ // UN NOMBRE UN APELLIDO
-                    segundoApellido = " ";
-                    primerNombre = splitStr[4 + corrimiento];
-                    sexo = splitStr[5 + corrimiento].contains("M") ? "Masculino" : "Femenino";
-                    rh = splitStr[5 + corrimiento].substring(splitStr[5 + corrimiento].length() - 2);
-                    fechaNacimiento = splitStr[5 + corrimiento].substring(2, 10);
-                } else if (splitStr[6 + corrimiento].startsWith("0")){ // DOS APELLIDOS UN NOMBRE
-                    primerNombre = splitStr[5 + corrimiento];
-                    segundoNombre = " ";
-                    sexo = splitStr[6 + corrimiento].contains("M") ? "Masculino" : "Femenino";
-                    rh = splitStr[6 + corrimiento].substring(splitStr[6 + corrimiento].length() - 2);
-                    fechaNacimiento = splitStr[6 + corrimiento].substring(2, 10);
-                } else { //DOS APELLIDOS DOS NOMBRES
-                    primerNombre = splitStr[5 + corrimiento];
-                    segundoNombre = splitStr[6 + corrimiento];
-                    sexo = splitStr[7 + corrimiento].contains("M") ? "Masculino" : "Femenino";
-                    rh = splitStr[7 + corrimiento].substring(splitStr[7 + corrimiento].length() - 2);
-                    fechaNacimiento = splitStr[7 + corrimiento].substring(2, 10);
-                }
-
-
-            }
-            /**
-             * Se setea el objeto con los datos
-             */
-            String TAG = "parseDataCode";
-            Log.d(TAG, "Nombre: " + primerNombre + segundoNombre) ;
-            Log.d(TAG, "CEDULA: " + cedula) ;
-            Log.d(TAG, "sexo: " + sexo) ;
-            infoTarjeta.setPrimerNombre(primerNombre);
-            infoTarjeta.setSegundoNombre(segundoNombre);
-            infoTarjeta.setPrimerApellido(primerApellido);
-            infoTarjeta.setSegundoApellido(segundoApellido);
-            infoTarjeta.setCedula(cedula);
-            infoTarjeta.setSexo(sexo);
-            infoTarjeta.setFechaNacimiento(fechaNacimiento);
-            infoTarjeta.setRh(rh);
-            actualizarCampos(infoTarjeta);
-
-        } else {
-            Log.d("TAG", "No barcode capturado");
+    private String parseCedulaFromBarcode(String barcode) {
+        if (barcode == null || barcode.length() < 150) {
+            return null; // Si el código es demasiado corto o nulo, no procesamos
         }
+
+        String alphaAndDigits = barcode.replaceAll("[^\\p{Alpha}\\p{Digit}\\+\\_]+", " ");
+        String[] splitStr = alphaAndDigits.split("\\s+");
+
+        // Usamos la lógica de extracción para encontrar la cédula en el código
+        String cedula = null;
+        int corrimiento = 0;
+        Pattern pat = Pattern.compile("[A-Z]");
+        Matcher match = pat.matcher(splitStr[2 + corrimiento]);
+        int lastCapitalIndex = -1;
+
+        if (match.find()) {
+            lastCapitalIndex = match.start();
+            cedula = splitStr[2 + corrimiento].substring(lastCapitalIndex - 10, lastCapitalIndex);
+        }
+
+        return cedula;
     }
 
-    private void actualizarCampos(InfoTarjeta infoTarjeta) {
-        tvFirstName.setText(String.format("%s%s", infoTarjeta.getPrimerNombre(), infoTarjeta.getSegundoApellido()));
-        tvLastName.setText(String.format("%s%s", infoTarjeta.getPrimerApellido(), infoTarjeta.getSegundoApellido()));
-        tvDocumentID.setText(infoTarjeta.getCedula());
-        tvGender.setText(infoTarjeta.getSexo());
-        tvDate.setText(infoTarjeta.getFechaNacimiento());
-        tvRH.setText(infoTarjeta.getRh());
+    private String procesarCedulaSegunLongitud(String cedula) {
+        // Si la cédula tiene 10 caracteres, la retornamos tal cual
+        String cedulaProcesada = cedula;
+
+        // Si la cédula tiene 10 caracteres y empieza con "0" seguido de un número mayor que "0"
+        if (cedula.length() == 10 && cedula.startsWith("0") && cedula.charAt(1) == '0') {
+            // Retornamos la cédula sin el primer "0"
+            cedulaProcesada = cedula.substring(2);
+        }
+
+        if (cedula.length() == 10 && cedula.startsWith("00") && cedula.charAt(1) > '0') {
+            // Retornamos la cédula sin el primer "0"
+            cedulaProcesada = cedula.substring(1);
+        }
+
+        if (cedula.length() == 10 && !cedula.startsWith("0") && cedula.charAt(0) > '0') {
+            // Retornamos la cédula sin el primer "0"
+            cedulaProcesada = cedula;
+        }
+
+        // Si la cédula tiene 8 caracteres y empieza con "00", eliminamos los dos primeros caracteres
+        else if (cedula.length() == 8 && cedula.startsWith("00")) {
+            cedulaProcesada = cedula.substring(2);
+        }
+
+        return cedulaProcesada;
+    }
+
+    private void actualizarCampos(String cedula) {
+
+        tvCedula.setText(cedula);
+
+    }
+
+    private void consultarBackend(String cedula) {
+        ApiClient apiClient = new ApiClient();
+        apiClient.obtenerDatos(new ApiClient.ApiResponseListener() {
+            @Override
+            public void onSuccess(Customer response) {
+                Log.d("API_RESPONSE", "Received customer: " + response.getNombre());
+                runOnUiThread(() -> {
+                    if (response != null) {
+                        tvName.setText(response.getNombre());
+                        tvCedula.setText(response.getDocumento());
+                        showSuccessDialog();
+                    } else {
+                        Log.e("API_RESPONSE", "Received null customer");
+                    }
+                });
+            }
+
+            @Override
+            public void onError(String errorMessage) {
+                Log.e("API_ERROR", "Error: " + errorMessage);
+                runOnUiThread(() ->
+                        Toast.makeText(MainActivity.this, "Error: " + errorMessage, Toast.LENGTH_LONG).show()
+                );
+            }
+        }, cedula);
+    }
+
+    private void showSuccessDialog() {
+        // Crear un AlertDialog para mostrar el mensaje
+        new android.app.AlertDialog.Builder(MainActivity.this)
+                .setTitle("Ingreso Permitido")
+                .setMessage("El usuario puede ingresar.")
+                .setPositiveButton("OK", (dialog, which) -> dialog.dismiss())
+                .show();
     }
 }
